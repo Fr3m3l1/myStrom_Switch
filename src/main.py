@@ -3,73 +3,84 @@ import requests
 import sys
 import time
 import signal
+import subprocess
+import threading
+import platform
+from dotenv import load_dotenv
+
+# Global variables for managing the shutdown timer
+shutdown_timer = None
+shutdown_scheduled = False
+
+def is_computer_online(computer_ip):
+    """Check if the computer is reachable by sending a ping."""
+    param = '-n' if platform.system().lower() == 'windows' else '-c'
+    command = ['ping', param, '1', computer_ip]
+    return subprocess.call(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    ) == 0
+
+def turn_off_switch(system_ip):
+    """Send an HTTP request to turn off the switch."""
+    state_off = 0
+    off_url = f"http://{system_ip}/elay?state={state_off}"
+    try:
+        response = requests.get(off_url, timeout=10)
+        response.raise_for_status()
+        print("Switch turned off successfully")
+    except requests.exceptions.RequestException as e:
+        print(f"Error turning off switch: {e}", file=sys.stderr)
 
 def main():
-    # Read environment variables
-    system_ip = os.getenv('SYSTEM_IP')
-    target_url = os.getenv('TARGET_URL')
-    interval = os.getenv('INTERVAL')
+    global shutdown_timer, shutdown_scheduled
 
-    # Validate required environment variables
-    required_env_vars = {
-        'SYSTEM_IP': system_ip,
-        'TARGET_URL': target_url,
-        'INTERVAL': interval,
-    }
+    # Read environment variables
+    system_ip = os.getenv('SYSTEM_IP')    # IP of the switch
+    computer_ip = os.getenv('COMPUTER_IP') # IP of the computer to monitor
+
+    # Validate environment variables
+    required_env_vars = {'SYSTEM_IP': system_ip, 'COMPUTER_IP': computer_ip}
     for var, value in required_env_vars.items():
         if not value:
-            print(f"Error: {var} environment variable is not set", file=sys.stderr)
+            print(f"Error: {var} environment variable not set", file=sys.stderr)
             sys.exit(1)
 
-    # Parse and validate interval
-    try:
-        interval_minutes = int(interval)
-    except ValueError:
-        print(f"Error: INTERVAL must be an integer (minutes), got '{interval}'", file=sys.stderr)
-        sys.exit(1)
-    
-    if interval_minutes <= 0:
-        print(f"Error: INTERVAL must be a positive integer, got {interval_minutes}", file=sys.stderr)
-        sys.exit(1)
-
-    interval_seconds = interval_minutes * 60
-    source_url = f"http://{system_ip}/api/system/info"
-
-    # Set up signal handler for graceful exit
+    # Signal handling for graceful exit
     def signal_handler(sig, frame):
         print("\nExiting gracefully...")
+        if shutdown_scheduled:
+            shutdown_timer.cancel()
         sys.exit(0)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    print(f"Starting data forwarder with interval {interval_minutes} minutes")
+    print(f"Monitoring computer at {computer_ip}. Switch control at {system_ip}")
 
     while True:
-        # Fetch data
-        try:
-            response = requests.get(source_url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching data from source: {e}", file=sys.stderr)
-        except ValueError as e:
-            print(f"Error parsing JSON response: {e}", file=sys.stderr)
+        computer_online = is_computer_online(computer_ip)
+        
+        if computer_online:
+            print("Computer is online")
+            if shutdown_scheduled:
+                shutdown_timer.cancel()
+                shutdown_scheduled = False
+                print("Cancelled pending shutdown")
         else:
-            # Forward data
-            try:
-                post_response = requests.post(
-                    target_url,
-                    json=data,
-                    timeout=10
+            print("Computer is offline")
+            if not shutdown_scheduled:
+                shutdown_timer = threading.Timer(
+                    20.0, 
+                    turn_off_switch, 
+                    args=[system_ip]
                 )
-                post_response.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print(f"Error forwarding data to target: {e}", file=sys.stderr)
-            else:
-                print("Data successfully forwarded to target URL")
-
-        # Wait for the next interval
-        time.sleep(interval_seconds)
+                shutdown_timer.start()
+                shutdown_scheduled = True
+                print("Scheduled switch shutdown in 20 seconds")
+        
+        time.sleep(10)  # Check every 10 seconds
 
 if __name__ == "__main__":
+    load_dotenv()
     main()
