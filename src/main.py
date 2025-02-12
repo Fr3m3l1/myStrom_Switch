@@ -6,7 +6,6 @@ import signal
 import subprocess
 import threading
 import platform
-from dotenv import load_dotenv
 
 # Global variables for managing the shutdown timer
 shutdown_timer = None
@@ -71,16 +70,20 @@ def main():
             print("Computer is offline")
             if not shutdown_scheduled:
                 shutdown_timer = threading.Timer(
-                    20.0, 
+                    120.0, 
                     turn_off_switch, 
                     args=[system_ip]
                 )
                 shutdown_timer.start()
                 shutdown_scheduled = True
-                print("Scheduled switch shutdown in 20 seconds")
+                print("Scheduled switch shutdown in 120 seconds")
         
-        time.sleep(10)  # Check every 10 seconds
+        # Write all prints 
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        # Check every 60 seconds
+        time.sleep(60)
 
 if __name__ == "__main__":
-    load_dotenv()
     main()
