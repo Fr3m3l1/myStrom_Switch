@@ -70,17 +70,15 @@ def main():
             print("Computer is offline")
             if not shutdown_scheduled:
                 shutdown_timer = threading.Timer(
-                    120.0, 
+                    600.0, 
                     turn_off_switch, 
                     args=[system_ip]
                 )
                 shutdown_timer.start()
                 shutdown_scheduled = True
-                print("Scheduled switch shutdown in 120 seconds")
-        
-        # Write all prints 
-        sys.stdout.flush()
-        sys.stderr.flush()
+                print("Scheduled switch shutdown in 600 seconds")
+            else:
+                print("Shutdown already scheduled")
 
         # Check every 60 seconds
         time.sleep(60)
